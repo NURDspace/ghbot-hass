@@ -15,6 +15,7 @@ import urllib.request
 
 # hasscfg.py should contain:
 #token        = '...'
+#api_url      = '...'
 
 
 mqtt_server  = 'mqtt.vm.nurd.space'
@@ -23,8 +24,6 @@ channels     = ['nurdbottest', 'nurds', 'nurdsbofh']
 prefix       = '!'
 
 last_ring    = None
-
-api_url      = 'http://jarvis.vm.nurd.space/api/'
 
 ignore_devices = []
 
