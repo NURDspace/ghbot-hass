@@ -3,11 +3,13 @@
 # by FvH, released under Apache License v2.0
 
 # either install 'python3-paho-mqtt' or 'pip3 install paho-mqtt'
-# also pip3 install homeassistant-api
+# also pip3 install homeassistant-api and python3-scipy
 
 from homeassistant_api import Client
 from hasscfg import *
 import paho.mqtt.client as mqtt
+from scipy import stats
+import statistics
 import threading
 import time
 
@@ -52,22 +54,6 @@ def announce_commands(client):
 
     client.publish(target_topic, 'cmd=geigertrend|descr=Show trend of the geiger counter measurements')
 
-# see https://stackoverflow.com/questions/10048571/python-finding-a-trend-in-a-set-of-numbers
-def linreg(X, Y):
-    """
-    return a,b in solution to y = ax + b such that root mean square distance between trend line and original points is minimized
-    """
-    N = len(X)
-    Sx = Sy = Sxx = Syy = Sxy = 0.0
-    for x, y in zip(X, Y):
-        Sx = Sx + x
-        Sy = Sy + y
-        Sxx = Sxx + x*x
-        Syy = Syy + y*y
-        Sxy = Sxy + x*y
-    det = Sxx * N - Sx * Sx
-    return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
-
 def on_message(client, userdata, message):
     global last_ring
     global prefix
@@ -106,9 +92,9 @@ def on_message(client, userdata, message):
                 client.publish(response_topic, 'Not enough measurements performed yet (please wait aprox. 60 seconds to try again)')
 
             else:
-                a, b = linreg(timestamps, measurements)
+                slope, intercept, r_value, p_value, std_err = stats.linregress(timestamps, measurements)
 
-                client.publish(response_topic, f'Geiger counter: for y = ax + b, a={a:.8e} and b={b:.8e} giving a uSv/h of {a * (time.time() + 3600) + b:.5f} after 1 hour. Calculated over {len(measurements)} measurements in {timestamps[-1] - timestamps[0]:.2f} seconds')
+                client.publish(response_topic, f'Geiger counter: for y = ax + b, a={slope:.8e} and b={intercept:.8e} giving {slope * (time.time() + 3600) + intercept:.5f} uSv/h after 1 hour from now. Calculated over {len(measurements)} measurements in {timestamps[-1] - timestamps[0]:.2f} seconds. r: {r_value:e}, p: {p_value:e}, standard error: {std_err:e}, avg: {statistics.mean(measurements):.2f} uSv/h, median: {statistics.median(measurements):.2f} uSv/h')
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
