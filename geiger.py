@@ -40,14 +40,14 @@ def poll_thread():
 
                     timestamps.append(state.last_updated.timestamp())
 
-                    while len(measurements) > 300:
+                    while len(measurements) > 1440:
                         del measurements[0]
                         del timestamps  [0]
 
         except Exception as e:
             print(f'poll_thread: {e}')
 
-        time.sleep(5)
+        time.sleep(59.5)
 
 def announce_commands(client):
     target_topic = f'{topic_prefix}to/bot/register'
@@ -94,7 +94,9 @@ def on_message(client, userdata, message):
             else:
                 slope, intercept, r_value, p_value, std_err = stats.linregress(timestamps, measurements)
 
-                client.publish(response_topic, f'Geiger counter: for y = ax + b, a={slope:.8e} and b={intercept:.8e} giving {slope * (time.time() + 3600) + intercept:.5f} uSv/h after 1 hour from now. Calculated over {len(measurements)} measurements in {timestamps[-1] - timestamps[0]:.2f} seconds. r: {r_value:e}, p: {p_value:e}, standard error: {std_err:e}, avg: {statistics.mean(measurements):.2f} uSv/h, median: {statistics.median(measurements):.2f} uSv/h')
+                now_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamps[-1]))
+
+                client.publish(response_topic, f'Geiger counter: for y = ax + b, a={slope:.8e} and b={intercept:.8e} giving {slope * (time.time() + 3600) + intercept:.5f} uSv/h after 1 hour from now ({now_str}). Calculated over {len(measurements)} measurements in {timestamps[-1] - timestamps[0]:.2f} seconds. r: {r_value:e}, p: {p_value:e}, standard error: {std_err:e}, avg: {statistics.mean(measurements):.2f} uSv/h, median: {statistics.median(measurements):.2f} uSv/h')
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
