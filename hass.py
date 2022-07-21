@@ -128,10 +128,10 @@ def cmd_ot(client, response_topic):  # opentherm
         returntemp = call_hass('states/sensor.return_water_temp_boiler_thermostaat')['state']
         otgw       = call_hass('states/climate.thermostaat')
 
-        client.publish(response_topic, 'water temp: %s°C, return temp: %s°C, heater: %s, kitchen temp: %s°C, setpoint: %s°C, last setpoint update: %s' % (watertemp, returntemp, otgw['state'], otgw['attributes']['current_temperature'], otgw['attributes']['temperature'], arrow.get(otgw['last_updated']).to('Europe/Amsterdam').format()))
+        client.publish(response_topic, 'water temp: %s°C, return temp: %s°C, heater: %s, kitchen temp: %s°C, setpoint: %s°C, last setpoint update: %s' % (watertemp, returntemp, otgw['attributes']['hvac_action'], otgw['attributes']['current_temperature'], otgw['attributes']['temperature'], arrow.get(otgw['last_updated']).to('Europe/Amsterdam').format()))
 
     except Exception as e:
-        client.publish(response_topic, f'Exception during "sth": {e}, line number: {e.__traceback__.tb_lineno}')
+        client.publish(response_topic, f'Exception during "ot": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def cmd_ot_set(client, response_topic, value):  # opentherm
     try:
