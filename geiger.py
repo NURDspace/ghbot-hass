@@ -29,6 +29,8 @@ def poll_thread():
 
     while True:
         try:
+            print('start', time.ctime())
+
             with Client(api_url, token) as client:
                 state = client.get_state(entity_id='sensor.geiger_counter')
 
@@ -43,6 +45,8 @@ def poll_thread():
                     while len(measurements) > 1440:
                         del measurements[0]
                         del timestamps  [0]
+
+            print('fin', time.ctime())
 
         except Exception as e:
             print(f'poll_thread: {e}')
@@ -61,6 +65,8 @@ def on_message(client, userdata, message):
     text = message.payload.decode('utf-8')
 
     topic = message.topic[len(topic_prefix):]
+
+    print(topic, text)
 
     if topic == 'from/bot/command' and text == 'register':
         announce_commands(client)

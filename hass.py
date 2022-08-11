@@ -49,15 +49,15 @@ def announce_commands(client):
     client.publish(target_topic, 'cmd=sth|agrp=members|descr=Space climate')
     client.publish(target_topic, 'cmd=octoprint|agrp=members|descr=How is the 3D print going?')
     client.publish(target_topic, 'cmd=ot|agrp=members|descr=Opentherm (status of central heating)')
-    client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating')
+    client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating, parameter is the temperature in celsius')
     client.publish(target_topic, 'cmd=sensor|agrp=members|descr=Get status of a sensor')
     client.publish(target_topic, 'cmd=sun|agrp=members|descr=All about the sun')
     client.publish(target_topic, 'cmd=power|agrp=members|descr=NURDSpace power usage')
-    client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace')
-    client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace')
+    client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
+    client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
     client.publish(target_topic, 'cmd=who|agrp=members|descr=Who is in NURDSpace currently? (see https://nurdspace.nl/Jarvis#Device_tracker)')
-    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist.')
-    client.publish(target_topic, 'cmd=ticker|agrp=members|descr=Show a text on the tickers/led-scrollers in the space.')
+    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist, parameter is the mumbo-jumbo-code in the url of a song, e.g. "5jqOSDq0Ssc" in https://www.youtube.com/watch?v=5jqOSDq0Ssc')
+    client.publish(target_topic, 'cmd=ticker|agrp=members|descr=Show a text on the tickers/led-scrollers in the space, parameter is the text to show.')
 
 def cmd_octoprint(client, response_topic):
     try:
@@ -423,7 +423,7 @@ def cmd_who(client, response_topic):
         if persons:
             client.publish(response_topic, 'People in the space: ' + ', '.join(persons))
 
-        else:
+        elif spacestatesensor['state'] != 'off':
             client.publish(response_topic, 'The space is empty.')
 
     except Exception as e:
