@@ -18,6 +18,9 @@ import urllib.request
 #api_url      = '...'
 
 
+import socket
+import sys
+
 mqtt_server  = 'mqtt.vm.nurd.space'
 topic_prefix = 'GHBot/'
 channels     = ['nurdbottest', 'nurds', 'nurdsbofh']
@@ -56,7 +59,7 @@ def announce_commands(client):
     client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
     client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
     client.publish(target_topic, 'cmd=who|agrp=members|descr=Who is in NURDSpace currently? (see https://nurdspace.nl/Jarvis#Device_tracker)')
-    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist, parameter is the mumbo-jumbo-code in the url of a song, e.g. "5jqOSDq0Ssc" in https://www.youtube.com/watch?v=5jqOSDq0Ssc')
+#    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist, parameter is the mumbo-jumbo-code in the url of a song, e.g. "5jqOSDq0Ssc" in https://www.youtube.com/watch?v=5jqOSDq0Ssc')
     client.publish(target_topic, 'cmd=ticker|agrp=members|descr=Show a text on the tickers/led-scrollers in the space, parameter is the text to show.')
 
 def cmd_octoprint(client, response_topic):
@@ -429,29 +432,24 @@ def cmd_who(client, response_topic):
     except Exception as e:
         client.publish(response_topic, f'Exception during "who": {e}, line number: {e.__traceback__.tb_lineno}')
 
-def cmd_mpdtube(client, response_topic, nick, channel, value):
-    topic = 'mpd/youtube-dl/play/nurdbot'
-
-    try:
-        if '!' in nick:
-            nick = nick[0:nick.find('!')]
-
-        payload = json.dumps({'user': str(nick), 'query': value, 'channel': channel})
-
-        client.publish(response_topic, f'{value} requested')
-
-        client.publish(topic, payload)
-
-    except Exception as e:
-        client.publish(response_topic, f'Exception during "mpdtube": {e}, line number: {e.__traceback__.tb_lineno}')
+#def cmd_mpdtube(client, response_topic, nick, channel, value):
+#    topic = 'mpd/youtube-dl/play/nurdbot'
+#
+#    try:
+#        if '!' in nick:
+#            nick = nick[0:nick.find('!')]
+#
+#        payload = json.dumps({'user': str(nick), 'query': value, 'channel': channel})
+#
+#        client.publish(response_topic, f'{value} requested')
+#
+#        client.publish(topic, payload)
+#
+#    except Exception as e:
+#        client.publish(response_topic, f'Exception during "mpdtube": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def cmd_ticker(client, response_topic, value):
     try:
-        if call_hass('states/switch.epc4_2')['state'] == 'off':
-            client.publish(response_topic, 'Ticker in zaal 1 is off')
-
-            return
-
         if value == None:
             client.publish(response_topic, 'Usage: !ticker <text to show on tickers>')
 
@@ -470,7 +468,11 @@ def cmd_ticker(client, response_topic, value):
 
         s.close()
 
-        client.publish(response_topic, 'Your text has been sent to the ticker-proxy.')
+        if call_hass('states/switch.epc4_2')['state'] == 'off':
+            client.publish(response_topic, 'Ticker in zaal 1 is off')
+
+        else:
+            client.publish(response_topic, 'Your text has been sent to the ticker-proxy.')
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "ticker": {e}, line number: {e.__traceback__.tb_lineno}')
@@ -508,7 +510,7 @@ def on_message(client, userdata, message):
         value     = parts[1]  if len(parts) >= 2 else None
         value_all = parts[1:] if len(parts) >= 2 else None
 
-        if channel in channels:
+        if channel in channels or (len(channel) >= 1 and channel[0] == '\\'):
             response_topic = f'{topic_prefix}to/irc/{channel}/privmsg'
 
             if command == 'sth':
@@ -541,8 +543,8 @@ def on_message(client, userdata, message):
             elif command == 'who':
                 cmd_who(client, response_topic)
 
-            elif command == 'mpdtube':
-                cmd_mpdtube(client, response_topic, nick, channel, ' '.join(value_all))
+#            elif command == 'mpdtube':
+#                cmd_mpdtube(client, response_topic, nick, channel, ' '.join(value_all))
 
             elif command == 'ticker':
                 cmd_ticker(client, response_topic, ' '.join(value_all))
@@ -551,10 +553,9 @@ def on_message(client, userdata, message):
         client.publish(response_topic, f'Exception during "on_message": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        client.subscribe(f'{topic_prefix}from/irc/#')
+    client.subscribe(f'{topic_prefix}from/irc/#')
 
-        client.subscribe(f'{topic_prefix}from/bot/command')
+    client.subscribe(f'{topic_prefix}from/bot/command')
 
 def announce_thread(client):
     while True:
@@ -566,10 +567,10 @@ def announce_thread(client):
         except Exception as e:
             print(f'Failed to announce: {e}')
 
-client = mqtt.Client()
-client.connect(mqtt_server, port=1883, keepalive=4, bind_address='')
+client = mqtt.Client(f'{socket.gethostname()}_{sys.argv[0]}', clean_session=False)
 client.on_message = on_message
 client.on_connect = on_connect
+client.connect(mqtt_server, port=1883, keepalive=4, bind_address='')
 
 t = threading.Thread(target=announce_thread, args=(client,))
 t.start()

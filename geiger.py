@@ -13,6 +13,9 @@ import statistics
 import threading
 import time
 
+import socket
+import sys
+
 mqtt_server  = 'mqtt.vm.nurd.space'
 topic_prefix = 'GHBot/'
 channels     = ['nurdbottest', 'nurds', 'nurdsbofh']
@@ -29,7 +32,7 @@ def poll_thread():
 
     while True:
         try:
-            print('start', time.ctime())
+            #print('start', time.ctime())
 
             with Client(api_url, token) as client:
                 state = client.get_state(entity_id='sensor.geiger_counter')
@@ -46,7 +49,7 @@ def poll_thread():
                         del measurements[0]
                         del timestamps  [0]
 
-            print('fin', time.ctime())
+            #print('fin', time.ctime())
 
         except Exception as e:
             print(f'poll_thread: {e}')
@@ -66,7 +69,7 @@ def on_message(client, userdata, message):
 
     topic = message.topic[len(topic_prefix):]
 
-    print(topic, text)
+    #print(topic, text)
 
     if topic == 'from/bot/command' and text == 'register':
         announce_commands(client)
@@ -90,7 +93,7 @@ def on_message(client, userdata, message):
 
     command = text[1:].split(' ')[0]
 
-    if channel in channels:
+    if channel in channels or (len(channel) >= 1 and channel[0] == '\\'):
         response_topic = f'{topic_prefix}to/irc/{channel}/privmsg'
 
         if command == 'geigertrend':
@@ -105,10 +108,9 @@ def on_message(client, userdata, message):
                 client.publish(response_topic, f'Geiger counter: for y = ax + b, a={slope:.8e} and b={intercept:.8e} giving {slope * (time.time() + 3600) + intercept:.5f} uSv/h after 1 hour from now ({now_str}). Calculated over {len(measurements)} measurements in {timestamps[-1] - timestamps[0]:.2f} seconds. r: {r_value:e}, p: {p_value:e}, standard error: {std_err:e}, avg: {statistics.mean(measurements):.2f} uSv/h, median: {statistics.median(measurements):.2f} uSv/h')
 
 def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        client.subscribe(f'{topic_prefix}from/irc/#')
+    client.subscribe(f'{topic_prefix}from/irc/#')
 
-        client.subscribe(f'{topic_prefix}from/bot/command')
+    client.subscribe(f'{topic_prefix}from/bot/command')
 
 def announce_thread(client):
     while True:
@@ -120,10 +122,10 @@ def announce_thread(client):
         except Exception as e:
             print(f'Failed to announce: {e}')
 
-client = mqtt.Client()
-client.connect(mqtt_server, port=1883, keepalive=4, bind_address="")
+client = mqtt.Client(f'{socket.gethostname()}_{sys.argv[0]}', clean_session=False)
 client.on_message = on_message
 client.on_connect = on_connect
+client.connect(mqtt_server, port=1883, keepalive=4, bind_address="")
 
 t1 = threading.Thread(target=announce_thread, args=(client,))
 t1.start()
