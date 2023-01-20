@@ -58,6 +58,7 @@ def announce_commands(client):
     client.publish(target_topic, 'cmd=power|agrp=members|descr=NURDSpace power usage')
     client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
     client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
+    client.publish(target_topic, 'cmd=toggle-list-on|agrp=members|descr=Get a list of devices that are currently on.')
     client.publish(target_topic, 'cmd=who|agrp=members|descr=Who is in NURDSpace currently? (see https://nurdspace.nl/Jarvis#Device_tracker)')
 #    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist, parameter is the mumbo-jumbo-code in the url of a song, e.g. "5jqOSDq0Ssc" in https://www.youtube.com/watch?v=5jqOSDq0Ssc')
     client.publish(target_topic, 'cmd=ticker|agrp=members|descr=Show a text on the tickers/led-scrollers in the space, parameter is the text to show.')
@@ -389,16 +390,18 @@ def cmd_toggle_list(client, response_topic, value):
         devices_found = []
 
         for pos, device in enumerate(get_togglelist_filtered()):
+            color = '\x033 ' if device['state'] == 'on' else '\x034 '
+
             # filter based on user input
             if len(value) >= 1:
                 if device['device'] not in devices_found and device_match(device, value):
-                    response.append("%s: %s" % (pos + 1, device['friendly_name']))
+                    response.append(f"\x035 %s\x036: {color}%s" % (pos + 1, device['friendly_name']))
 
                     devices_found.append(device['device'])
 
             else:
                 # Just shows everything
-                response.append("%s: %s" % (pos + 1, device['friendly_name']))
+                response.append(f"\x035 %s\x036: {color}%s" % (pos + 1, device['friendly_name']))
 
         if len(response) >= 1:
             client.publish(response_topic, ', '.join(response))
@@ -408,6 +411,23 @@ def cmd_toggle_list(client, response_topic, value):
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "toggle-list": {e}, line number: {e.__traceback__.tb_lineno}')
+
+def cmd_toggle_list_on(client, response_topic, value):
+    try:
+        on = []
+
+        for pos, device in enumerate(get_togglelist_filtered()):
+            if device['state'] == 'on':
+                on.append(f"\x035 %s\x036: \x031 %s" % (pos + 1, device['friendly_name']))
+
+        if len(on) >= 1:
+            client.publish(response_topic, ', '.join(on))
+
+        else:
+            client.publish(response_topic, 'Everything is off')
+
+    except Exception as e:
+        client.publish(response_topic, f'Exception during "toggle-list-on": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def cmd_who(client, response_topic):
     try:
@@ -424,10 +444,10 @@ def cmd_who(client, response_topic):
             persons.append(person['attributes']['friendly_name'])
 
         if persons:
-            client.publish(response_topic, 'People in the space: ' + ', '.join(persons))
+            client.publish(response_topic, 'People in the space: ' + ', '.join(persons) + '')
 
         elif spacestatesensor['state'] != 'off':
-            client.publish(response_topic, 'The space is empty.')
+            client.publish(response_topic, 'The space is likely empty.')
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "who": {e}, line number: {e.__traceback__.tb_lineno}')
@@ -539,6 +559,9 @@ def on_message(client, userdata, message):
 
             elif command == 'toggle-list':
                 cmd_toggle_list(client, response_topic, value)
+
+            elif command == 'toggle-list-on':
+                cmd_toggle_list_on(client, response_topic, value)
 
             elif command == 'who':
                 cmd_who(client, response_topic)
