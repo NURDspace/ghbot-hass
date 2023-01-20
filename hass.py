@@ -418,7 +418,7 @@ def cmd_toggle_list_on(client, response_topic, value):
 
         for pos, device in enumerate(get_togglelist_filtered()):
             if device['state'] == 'on':
-                on.append(f"\x035 %s\x036: \x031 %s" % (pos + 1, device['friendly_name']))
+                on.append(f"\x035 %s\x036: \x037 %s" % (pos + 1, device['friendly_name']))
 
         if len(on) >= 1:
             client.publish(response_topic, ', '.join(on))
