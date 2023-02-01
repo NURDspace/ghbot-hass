@@ -54,6 +54,7 @@ def announce_commands(client):
     client.publish(target_topic, 'cmd=ot|agrp=members|descr=Opentherm (status of central heating)')
     client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating, parameter is the temperature in celsius')
     client.publish(target_topic, 'cmd=sensor|agrp=members|descr=Get status of a sensor')
+    client.publish(target_topic, 'cmd=calendar|agrp=members|descr=Get calendar')
     client.publish(target_topic, 'cmd=sun|agrp=members|descr=All about the sun')
     client.publish(target_topic, 'cmd=power|agrp=members|descr=NURDSpace power usage')
     client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
@@ -209,6 +210,27 @@ def cmd_sensor(client, response_topic, value):
 
         else:
             client.publish(response_topic, 'No sensor found')
+
+def cmd_calendar(client, response_topic, value):
+    if value == None:
+        client.publish(response_topic, 'Parameter (calendar-name) missing')
+
+        return
+    try:
+        states = call_hass('states')
+
+    except Exception as e:
+        client.publish(response_topic, f'Exception during "sensor": {e}, line number: {e.__traceback__.tb_lineno}')
+
+    else:
+        output = []
+        for sensor in list(filter(lambda d: d['entity_id'].lower().find(value.lower()) != -1 and d['entity_id'].find('calendar') != -1, states)):
+            if 'message' in sensor['attributes']:
+                if sensor['attributes']['all_day']:
+                    sensor['attributes']['start_time'] = sensor['attributes']['start_time'].split(" ")[0]
+                    sensor['attributes']['end_time'] = sensor['attributes']['end_time'].split(" ")[0]
+                output.append(sensor['attributes']['friendly_name'] + ": " + sensor['attributes']['message'] + " S:" + sensor['attributes']['start_time'] + " E:" + sensor['attributes']['end_time'])
+        client.publish(response_topic, ", ".join(output))
 
 def cmd_sun(client, response_topic):
     try:
@@ -547,6 +569,9 @@ def on_message(client, userdata, message):
 
             elif command == 'sensor':
                 cmd_sensor(client, response_topic, value)
+
+            elif command == 'calendar':
+                cmd_calendar(client, response_topic, value)
 
             elif command == 'sun':
                 cmd_sun(client, response_topic)
