@@ -49,14 +49,14 @@ def call_hass(sensor, payload = None):
 def announce_commands(client):
     target_topic = f'{topic_prefix}to/bot/register'
 
-    client.publish(target_topic, 'cmd=sth|agrp=members|descr=Space climate')
+    client.publish(target_topic, 'cmd=sth|descr=Space climate')
     client.publish(target_topic, 'cmd=octoprint|agrp=members|descr=How is the 3D print going?')
-    client.publish(target_topic, 'cmd=ot|agrp=members|descr=Opentherm (status of central heating)')
+    client.publish(target_topic, 'cmd=ot|descr=Opentherm (status of central heating)')
     client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating, parameter is the temperature in celsius')
-    client.publish(target_topic, 'cmd=sensor|agrp=members|descr=Get status of a sensor')
-    client.publish(target_topic, 'cmd=calendar|agrp=members|descr=Get calendar')
-    client.publish(target_topic, 'cmd=sun|agrp=members|descr=All about the sun')
-    client.publish(target_topic, 'cmd=power|agrp=members|descr=NURDSpace power usage')
+    client.publish(target_topic, 'cmd=sensor|descr=Get status of a sensor')
+    client.publish(target_topic, 'cmd=calendar|descr=Get calendar')
+    client.publish(target_topic, 'cmd=sun|descr=All about the sun')
+    client.publish(target_topic, 'cmd=power|descr=NURDSpace power usage')
     client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
     client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
     client.publish(target_topic, 'cmd=toggle-list-on|agrp=members|descr=Get a list of devices that are currently on.')
