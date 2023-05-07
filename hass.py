@@ -12,6 +12,9 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import timeago #https://pypi.org/project/timeago/
+import datetime
+from dateutil.parser import parse
 
 # hasscfg.py should contain:
 #token        = '...'
@@ -168,7 +171,12 @@ def cmd_ot_set(client, response_topic, value):  # opentherm
         client.publish(response_topic, f'Exception during "ot-set": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def cmd_sensor(client, response_topic, value):
-    if value == None:
+    verbose = False
+    if '-v' in value:
+        value.remove('-v')
+        verbose = True
+    value = ' '.join(value)
+    if value == None or value == "":
         client.publish(response_topic, 'Parameter (sensor-name) missing')
 
         return
@@ -181,6 +189,7 @@ def cmd_sensor(client, response_topic, value):
 
     else:
         output = []
+
 
         for sensor in list(filter(lambda d: d['entity_id'].lower().find(value.lower()) != -1 and d['entity_id'].find('sensor') != -1, states)):
             if 'device_class' in sensor['attributes']:
@@ -204,6 +213,10 @@ def cmd_sensor(client, response_topic, value):
                     output.append(sensor['attributes']['friendly_name'] + ': ' + sensor['state'])
                 else:
                     output.append(sensor['entity_id'] + ': ' + sensor['state'])
+            if verbose:
+                last_elem = output.pop()
+                changed = parse(sensor['last_changed'])
+                output.append(last_elem + " " + timeago.format(changed, datetime.datetime.now(datetime.timezone.utc)))
 
         if len(output):
             client.publish(response_topic, ', '.join(output))
@@ -568,7 +581,7 @@ def on_message(client, userdata, message):
                 cmd_ot_set(client, response_topic, value)
 
             elif command == 'sensor':
-                cmd_sensor(client, response_topic, value)
+                cmd_sensor(client, response_topic, value_all)
 
             elif command == 'calendar':
                 cmd_calendar(client, response_topic, value)
