@@ -23,6 +23,7 @@ channels     = ['nurdbottest', 'nurds']
 prefix       = '!'
 
 prev_space_state = None
+prev_space_state_change = time.time()
 
 def call_hass(sensor, payload = None):
     url        = api_url + sensor
@@ -71,37 +72,50 @@ def on_message(client, userdata, message):
     global open_electries_start
     global closed_electries_start
     global prev_space_state
+    global prev_space_state_change
 
     text = message.payload.decode('utf-8')
     space_state = True if text == '1' else False
 
     if space_state != prev_space_state:
         prev_space_state = space_state
+        now = time.time()
+        time_diff = now - prev_space_state_change
+        prev_space_state_change = now
 
         current_gas = gas()
+
+        output = ''
 
         if space_state == False:
             if current_gas != None:
                 closed_gas_start = current_gas
                 if open_gas_start != None:
-                    if random.randint(0, 10) == 3:
-                        send_bot(f'Space is now closed. We used aproximately {current_gas - open_gas_start:.4f} m3 gas (WITTE WEL WA DA KOST?!).')
-                    else:
-                        send_bot(f'Space is now closed. We used aproximately {current_gas - open_gas_start:.4f} m3 gas while open.')
+                    gas_diff = current_gas - open_gas_start
+                    output += f'Space is now closed. We used {gas_diff:.4f} m3 gas while open ({gas_diff * 3600/ time_diff:.4f} m3/uur) '
         elif current_gas != None:
+            gas_diff = current_gas - closed_gas_start
             open_gas_start = current_gas
-            send_bot(f'Space is now open. We used aproximately {current_gas - closed_gas_start:.4f} m3 gas while closed.')
+            output += f'Space is now open. We used {gas_diff:.4f} m3 gas while closed ({gas_diff * 3600/ time_diff:.4f} m3/uur)'
 
         current_electries = electries()
+
+        output += ' '
 
         if space_state == False:
             if current_electries != None:
                 closed_electries_start = current_electries
                 if open_electries_start != None:
-                    send_bot(f'We used aproximately {current_electries - open_electries_start:.4f} kWh while open.')
+                    stroom_diff = current_electries - open_electries_start
+                    output += f'and {stroom_diff:.4f} kWh electricity ({stroom_diff * 3600 / time_diff:.4f} m3/uur).'
         elif current_electries != None:
+            stroom_diff = current_electries - closed_electries_start
             open_electries_start = current_electries
-            send_bot(f'We used aproximately {current_electries - closed_electries_start:.4f} kWh while closed.')
+            output += f'and {current_electries - closed_electries_start:.4f} kWh electricity ({stroom_diff * 3600 / time_diff:.4f} m3/uur).'
+        else:
+            output += '.'
+
+        send_bot(output)
 
 def on_connect(client, userdata, flags, rc):
     client.subscribe(f'space/statedigit')
