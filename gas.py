@@ -74,48 +74,60 @@ def on_message(client, userdata, message):
     global prev_space_state
     global prev_space_state_change
 
-    text = message.payload.decode('utf-8')
-    space_state = True if text == '1' else False
+    try:
+        text = message.payload.decode('utf-8')
+        space_state = True if text == '1' else False
 
-    if space_state != prev_space_state:
-        prev_space_state = space_state
-        now = time.time()
-        time_diff = now - prev_space_state_change
-        prev_space_state_change = now
+        if space_state != prev_space_state:
+            prev_space_state = space_state
+            now = time.time()
+            time_diff = now - prev_space_state_change
+            prev_space_state_change = now
 
-        current_gas = gas()
+            current_gas = gas()
 
-        output = ''
+            output = ''
 
-        if space_state == False:
-            if current_gas != None:
-                closed_gas_start = current_gas
-                if open_gas_start != None:
-                    gas_diff = current_gas - open_gas_start
-                    output += f'Space is now closed. We used {gas_diff:.4f} m3 gas while open ({gas_diff * 3600/ time_diff:.4f} m3/uur) '
-        elif current_gas != None:
-            gas_diff = current_gas - closed_gas_start
-            open_gas_start = current_gas
-            output += f'Space is now open. We used {gas_diff:.4f} m3 gas while closed ({gas_diff * 3600/ time_diff:.4f} m3/uur)'
+            time_diff_str = ''
+            if time_diff < 7200:
+                time_diff_str = f'{time_diff:.2f} seconds'
+            elif time_diff < 86400:
+                time_diff_str = f'{time_diff / 3600:.2f} hours'
+            else:
+                time_diff_str = f'{time_diff / 86400:.2f} days'
 
-        current_electries = electries()
+            if space_state == False:
+                if current_gas != None:
+                    closed_gas_start = current_gas
+                    if open_gas_start != None:
+                        gas_diff = current_gas - open_gas_start
+                        output += f'Space is now closed after {time_diff_str}. We used {gas_diff:.4f} m3 gas while open ({gas_diff * 3600/ time_diff:.4f} m3/hour)'
+            elif current_gas != None:
+                gas_diff = current_gas - closed_gas_start
+                open_gas_start = current_gas
+                output += f'Space is now open, was closed for {time_diff_str}. We used {gas_diff:.4f} m3 gas while closed ({gas_diff * 3600/ time_diff:.4f} m3/hour)'
 
-        output += ' '
+            current_electries = electries()
 
-        if space_state == False:
-            if current_electries != None:
-                closed_electries_start = current_electries
-                if open_electries_start != None:
-                    stroom_diff = current_electries - open_electries_start
-                    output += f'and {stroom_diff:.4f} kWh electricity ({stroom_diff * 3600 / time_diff:.4f} m3/uur).'
-        elif current_electries != None:
-            stroom_diff = current_electries - closed_electries_start
-            open_electries_start = current_electries
-            output += f'and {current_electries - closed_electries_start:.4f} kWh electricity ({stroom_diff * 3600 / time_diff:.4f} m3/uur).'
-        else:
-            output += '.'
+            output += ' '
 
-        send_bot(output)
+            if space_state == False:
+                if current_electries != None:
+                    closed_electries_start = current_electries
+                    if open_electries_start != None:
+                        stroom_diff = current_electries - open_electries_start
+                        output += f'and {stroom_diff:.4f} kWh electricity ({stroom_diff * 3600 / time_diff:.4f} kWh/hour).'
+            elif current_electries != None:
+                stroom_diff = current_electries - closed_electries_start
+                open_electries_start = current_electries
+                output += f'and {current_electries - closed_electries_start:.4f} kWh electricity ({stroom_diff * 3600  / time_diff:.4f} kWh/hour).'
+            else:
+                output += '.'
+
+            send_bot(output)
+
+    except Exception as e:
+        send_bot(f'EXCEPTION (gas): {e}')
 
 def on_connect(client, userdata, flags, rc):
     client.subscribe(f'space/statedigit')
