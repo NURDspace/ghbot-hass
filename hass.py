@@ -282,6 +282,12 @@ def cmd_power(client, response_topic):
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "power": {e}, line number: {e.__traceback__.tb_lineno}')
+def entity_filter(entity):
+    if entity['entity_id'].find('switch') != -1:
+        return True
+    if entity['entity_id'].find('light') != -1:
+        return True
+    return False
 
 def get_togglelist():
     states   = call_hass('states')
@@ -289,7 +295,7 @@ def get_togglelist():
     friendly = []
     state     = []
 
-    for switch in list(filter(lambda d: d['entity_id'].find('switch') != -1, states)):
+    for switch in list(filter(entity_filter, states)):
         if 'friendly_name' not in switch['attributes']:
             continue
 
@@ -342,7 +348,10 @@ def toggle_device(device):
         elif device['state'] == 'on':
             reply = 'Switching off %s (id: %s)' % (device['friendly_name'], device['id'])
 
-        call_hass('services/switch/toggle', '{"entity_id": "%s"}' % device['device'])
+        if device['device'].find("switch") > -1:
+            call_hass('services/switch/toggle', '{"entity_id": "%s"}' % device['device'])
+        if device['device'].find("light") > -1:
+            call_hass('services/light/toggle', '{"entity_id": "%s"}' % device['device'])
 
         return reply
 
