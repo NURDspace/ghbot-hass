@@ -19,7 +19,7 @@ import urllib.request
 import socket
 import sys
 
-mqtt_server  = 'mqtt.vm.nurd.space'   # TODO: hostname of MQTT server
+mqtt_server  = 'mqtt.nurd.space'   # TODO: hostname of MQTT server
 topic_prefix = 'GHBot/'  # leave this as is
 channels     = ['nurdbottest', 'nurds', 'nurdsbofh']  # TODO: channels to respond to
 prefix       = '!'  # !command, will be updated by ghbot
@@ -88,7 +88,7 @@ def on_message(client, userdata, message):
                 verbose = True if len(parts) >= 2 and parts[1] == '-v' else False
                 headers = { 'User-Agent': 'GHBot' }
 
-                r = requests.get('http://stofradar.nl:9001/energy/latest', timeout=10, headers=headers)
+                r = requests.get('http://stofradar.nl:9001/electricity/generation', timeout=10, headers=headers)
 
                 try:
                     j = json.loads(r.content.decode('ascii'))
@@ -119,7 +119,10 @@ def on_message(client, userdata, message):
                     if source['id'] == 'solar':
                         color_index = 8
 
-                    elif source['id'] == 'wind':
+                    elif source['id'] == 'wind onshore':
+                        color_index = 12
+
+                    elif source['id'] == 'wind offshore':
                         color_index = 12
 
                     elif source['id'] == 'nuclear':
@@ -131,11 +134,14 @@ def on_message(client, userdata, message):
                     elif source['id'] == 'other':
                         color_index = 6
 
-                    elif source['id'] == 'fossil':
+                    elif source['id'] == 'fossil gas':
                         color_index = 5
+                    
+                    elif source['id'] == 'fossil coal':
+                        color_index = 7
 
                     else:
-                        color_index = (abs(hash(source['color']) * 9) % 13) + 2
+                        color_index = 0#(abs(hash(source['color']) * 9) % 13) + 2
 
                     out += f"\3{color_index}{source['id']}: {source['power']} MW ({perc:.2f}%)"
 
@@ -146,9 +152,9 @@ def on_message(client, userdata, message):
 
                 ts = netherlands_tz.localize(datetime.datetime.fromtimestamp(t))
 
-                out += f' ({ts})'
+                out += f' \x030({ts})'
 
-                out += f" NURDspace consumption: {float(call_hass('states/sensor.power')['state']) * 100 / (total * 1000000):.20f}%"
+                out += f" \x034(NURDspace consumption: {float(call_hass('states/sensor.power')['state']) * 100 / (total * 1000000):.20f}%)"
 
                 if verbose:
                     client.publish(response_topic, outblocks + f' ({ts} / {outblocks_l})')
