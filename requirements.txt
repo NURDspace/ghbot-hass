@@ -1,0 +1,8 @@
+arrow
+bs4
+cloudscraper
+homeassistant_api
+httpx
+paho-mqtt
+scipy
+timeago

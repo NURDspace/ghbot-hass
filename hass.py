@@ -1,6 +1,7 @@
-#! /usr/bin/python3
+#! /usr/bin/env python3
 
 # either install 'python3-paho-mqtt' or 'pip3 install paho-mqtt'
+# pip3 install arrow timeago
 
 import arrow
 from hasscfg import *
@@ -24,7 +25,7 @@ from dateutil.parser import parse
 import socket
 import sys
 
-mqtt_server  = 'mqtt.vm.nurd.space'
+mqtt_server  = 'mqtt.nurd.space'
 topic_prefix = 'GHBot/'
 channels     = ['nurdbottest', 'nurds', 'nurdsbofh']
 prefix       = '!'
@@ -35,7 +36,7 @@ ignore_devices = []
 
 def call_hass(sensor, payload = None):
     url        = api_url + sensor
-
+    
     headers    = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
 
     if payload != None:
@@ -52,18 +53,20 @@ def call_hass(sensor, payload = None):
 def announce_commands(client):
     target_topic = f'{topic_prefix}to/bot/register'
 
-    client.publish(target_topic, 'cmd=sth|descr=Space climate')
+    # client.publish(target_topic, 'cmd=sthold|descr=Space climate (old)')
+    # client.publish(target_topic, 'cmd=sth|descr=Space climate')
     client.publish(target_topic, 'cmd=octoprint|agrp=members|descr=How is the 3D print going?')
-    client.publish(target_topic, 'cmd=ot|descr=Opentherm (status of central heating)')
-    client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating, parameter is the temperature in celsius')
-    client.publish(target_topic, 'cmd=sensor|descr=Get status of a sensor')
-    client.publish(target_topic, 'cmd=calendar|descr=Get calendar')
-    client.publish(target_topic, 'cmd=sun|descr=All about the sun')
-    client.publish(target_topic, 'cmd=power|descr=NURDSpace power usage')
-    client.publish(target_topic, 'cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
-    client.publish(target_topic, 'cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
-    client.publish(target_topic, 'cmd=toggle-list-on|agrp=members|descr=Get a list of devices that are currently on.')
-    client.publish(target_topic, 'cmd=who|agrp=members|descr=Who is in NURDSpace currently? (see https://nurdspace.nl/Jarvis#Device_tracker)')
+    # client.publish(target_topic, 'cmd=ot|descr=Opentherm (status of central heating)')
+    # client.publish(target_topic, 'cmd=ot-set|agrp=members|descr=Set thermostat of central heating, parameter is the temperature in celsius')
+    client.publish(target_topic, 'hgrp=hass|cmd=sensor|descr=Get status of a sensor')
+    # client.publish(target_topic, 'cmd=calendar|descr=Get calendar')
+    # client.publish(target_topic, 'cmd=sun|descr=All about the sun')
+    # client.publish(target_topic, 'cmd=power|descr=NURDSpace power usage')
+    client.publish(target_topic, 'hgrp=hass|cmd=toggle|agrp=members|descr=Toggle power state of a device in NURDSpace, parameter is the name of the device. Use toggle-list if uncertain.')
+    client.publish(target_topic, 'hgrp=hass|cmd=show-on|agrp=members|descr=Show what devices are ON.')
+    client.publish(target_topic, 'hgrp=hass|cmd=toggle-list|agrp=members|descr=Get a list of devices that can be toggled in NURDSpace, parameter is part of the device-name you are looking for.')
+    client.publish(target_topic, 'hgrp=hass|cmd=toggle-list-on|agrp=members|descr=Get a list of devices that are currently on.')
+    # client.publish(target_topic, 'cmd=who|descr=Who is in NURDSpace currently? (see https://nurdspace.nl/Jarvis#Device_tracker)')
 #    client.publish(target_topic, 'cmd=mpdtube|agrp=members|descr=Adds a song from youtube to the playlist, parameter is the mumbo-jumbo-code in the url of a song, e.g. "5jqOSDq0Ssc" in https://www.youtube.com/watch?v=5jqOSDq0Ssc')
     client.publish(target_topic, 'cmd=ticker|agrp=members|descr=Show a text on the tickers/led-scrollers in the space, parameter is the text to show.')
 
@@ -85,6 +88,77 @@ def cmd_octoprint(client, response_topic):
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "octoprint": {e}, line number: {e.__traceback__.tb_lineno}')
+
+def get_irc_color_temp(celsius_temp):
+    """
+    Assigns an IRC color to a Celsius temperature based on its heat level.
+    
+    Arguments:
+    celsius_temp -- The Celsius temperature value.
+    
+    Returns:
+    The IRC color code as a string.
+    """
+    if celsius_temp >= 30.0:
+        return '\x034'  # Red color code
+    elif celsius_temp >= 20.0:
+        return '\x037'  # Orange color code
+    elif celsius_temp >= 10.0:
+        return '\x038'  # Yellow color code
+    elif celsius_temp >= 0.0:
+        return '\x0309'  # Light Green color code
+    elif celsius_temp >= -10.0:
+        return '\x0311'  # Dark Green color code
+    else:
+        return '\x0312'  # Light Blue color code
+    
+def get_irc_color_hum(humidity):
+    """
+    Assigns an IRC color to a humidity level based on its value.
+    
+    Arguments:
+    humidity -- The humidity value.
+    
+    Returns:
+    The IRC color code as a string.
+    """
+    if humidity > 60:
+        return '\x034'
+    if humidity >= 40:
+        return '\x0309'
+    return '\x037'
+    # if humidity >= 80:
+    #     return '\x034'  # Red color code
+    # elif humidity > 60:
+    #     return '\x037'  # Orange color code
+    # elif humidity >= 30:
+    #     return '\x038'  # Yellow color code
+    # elif humidity >= 10:
+    #     return '\x0310'  # Light Green color code
+    # else:
+    #     return '\x0311'  # Dark Green color code
+
+def cmd_sth_new(client, response_topic):
+    # By Melan
+    locations = ["zaal_1", "zaal_1_raam", "studio", "bar", "zaal_2", "smokeroom", "zaal_3"]
+    naming = ["Zaal 1", "Raam", "Bieb", "Bar", "Zaal 2", "Rookhok", "Zaal 3"]
+    states = {}
+    try:
+        for location in locations:
+            states.update({
+                location: {"temp": float(call_hass(f"states/sensor.{location}_temperature")['state']),
+                           "hum":  float(call_hass(f"states/sensor.{location}_humidity")['state'])}})
+    except Exception as e:
+        return client.publish(response_topic, f'Exception during "sth": {e}, line number: {e.__traceback__.tb_lineno}')
+
+    outString = ""
+    for pos, location in enumerate(locations):
+        temp_color = get_irc_color_temp(states.get(location)['temp'])
+        hum_color = get_irc_color_hum(states.get(location)['hum'])
+        outString += f"\x0309{naming[pos]}\x0f:{temp_color} {str(states.get(location)['temp'])}°C\x0f /{hum_color} {str(states.get(location)['hum'])}%\x0f, "
+    
+    client.publish(response_topic, outString[:-2])
+
 
 def cmd_sth(client, response_topic):
     try:
@@ -261,27 +335,35 @@ def cmd_sun(client, response_topic):
 
 def cmd_power(client, response_topic):
     try:
-        groepa = call_hass('states/sensor.groepenkast_a_power')
-        groepb = call_hass('states/sensor.groepenkast_b_power')
+        # groepa = call_hass('states/sensor.groepenkast_a_power')
+        # groepb = call_hass('states/sensor.groepenkast_b_power')
 
-        totaal = call_hass('states/sensor.power')
+        # totaal = call_hass('states/sensor.power')
 
-        #poe    = call_hass('states/sensor.switch_core_poe_power')
-        poe    = dict()
-        poe['state'] = -1.
+        totaal = call_hass('states/sensor.p1_meter_5c2faf04df56_active_power')
+        
+        rack = call_hass('states/sensor.rack_pdu_watts')
+        aimachine = call_hass('states/sensor.naaimachine_tasmota_energy_power')
+        amp_zaal1 = call_hass('states/sensor.amp_zaal_1_power')
 
-        laag   = call_hass('states/sensor.energy_monthly_offpeak')
-        hoog   = call_hass('states/sensor.energy_monthly_peak')
-        dlaag  = call_hass('states/sensor.energy_daily_offpeak')
-        dhoog  = call_hass('states/sensor.energy_daily_peak')
+        # #poe    = call_hass('states/sensor.switch_core_poe_power')
+        # poe    = dict()
+        # poe['state'] = -1.
 
-        kwh    = float(laag['state'])  + float(hoog['state'])
-        dkwh   = float(dlaag['state']) + float(dhoog['state'])
+        # laag   = call_hass('states/sensor.energy_monthly_offpeak')
+        # hoog   = call_hass('states/sensor.energy_monthly_peak')
+        # dlaag  = call_hass('states/sensor.energy_daily_offpeak')
+        # dhoog  = call_hass('states/sensor.energy_daily_peak')
 
-        client.publish(response_topic, 'Groep A: %sW Groepen B: %sW POE: %.2fW Totaal: %sW Day: %.2fkWh Month: %.2fkWh' % (groepa['state'], groepb['state'], float(poe['state']) / 1000, totaal['state'], dkwh, kwh))
+        # kwh    = float(laag['state'])  + float(hoog['state'])
+        # dkwh   = float(dlaag['state']) + float(dhoog['state'])
+
+        client.publish(response_topic, 'Rack: %sW Naaimachine: %sW Amp zaal 1: %sW Space Totaal: %sW' % (rack['state'], aimachine['state'], amp_zaal1['state'], totaal['state']))
+        # client.publish(response_topic, 'Rack: %sW Groep A: %sW Groepen B: %sW POE: %.2fW Totaal: %sW Day: %.2fkWh Month: %.2fkWh' % (rack['state'], groepa['state'], groepb['state'], float(poe['state']) / 1000, totaal['state'], dkwh, kwh))
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "power": {e}, line number: {e.__traceback__.tb_lineno}')
+
 def entity_filter(entity):
     if entity['entity_id'].find('switch') != -1:
         return True
@@ -348,6 +430,9 @@ def toggle_device(device):
         elif device['state'] == 'on':
             reply = 'Switching off %s (id: %s)' % (device['friendly_name'], device['id'])
 
+        elif device['state'] == 'unavailable':
+            reply = "l'appareil %s (identifiant: %s) est actuellement inaccessible" % (device['friendly_name'], device['id'])
+
         if device['device'].find("switch") > -1:
             call_hass('services/switch/toggle', '{"entity_id": "%s"}' % device['device'])
         if device['device'].find("light") > -1:
@@ -367,9 +452,23 @@ def find_devices(devices, match):
 
     return devices_found
 
+def cmd_show_on(client, response_topic):
+    try:
+        togglelist = get_togglelist_filtered()
+
+        response = []
+        for toggle in togglelist:
+            if toggle['state'] == 'on':
+                response.append('\x033 %s:\x036 %s' % (toggle['id'], toggle['friendly_name']))
+
+        client.publish(response_topic, ', '.join(response))
+
+    except Exception as e:
+        client.publish(response_topic, f'Exception during "toggle": {e}, line number: {e.__traceback__.tb_lineno}')
+
 def cmd_toggle(client, response_topic, value):
     if value == None:
-        client.publish(response_topic, 'Enter a space separated list of device names. See "!toggle-list" for a list.')
+        client.publish(response_topic, 'Enter a "|" separated list of device names. See "!toggle-list" for a list.')
 
         return
 
@@ -378,10 +477,12 @@ def cmd_toggle(client, response_topic, value):
 
         response = []
 
-        for device_name in value.split(' '):
+        for device_name in value.split('|'):
+            print(device_name)
             # When the user wants to toggle based on array index
             if device_name.isdigit():
                 device_pos = int(device_name) - 1
+                print(device_pos)
 
                 # Make sure we can't go out of bounds
                 if device_pos < 0:
@@ -390,6 +491,7 @@ def cmd_toggle(client, response_topic, value):
                 elif device_pos >= len(togglelist):
                     device_pos = len(togglelist) - 1
 
+                print(togglelist[device_pos])
                 response.append(toggle_device(togglelist[device_pos]))
 
             else: # Match based on word
@@ -437,7 +539,7 @@ def cmd_toggle_list(client, response_topic, value):
             color = '\x033 ' if device['state'] == 'on' else '\x034 '
 
             # filter based on user input
-            if len(value) >= 1:
+            if value != None and len(value) >= 1:
                 if device['device'] not in devices_found and device_match(device, value):
                     response.append(f"\x035 %s\x036: {color}%s" % (pos + 1, device['friendly_name']))
 
@@ -496,21 +598,6 @@ def cmd_who(client, response_topic):
     except Exception as e:
         client.publish(response_topic, f'Exception during "who": {e}, line number: {e.__traceback__.tb_lineno}')
 
-#def cmd_mpdtube(client, response_topic, nick, channel, value):
-#    topic = 'mpd/youtube-dl/play/nurdbot'
-#
-#    try:
-#        if '!' in nick:
-#            nick = nick[0:nick.find('!')]
-#
-#        payload = json.dumps({'user': str(nick), 'query': value, 'channel': channel})
-#
-#        client.publish(response_topic, f'{value} requested')
-#
-#        client.publish(topic, payload)
-#
-#    except Exception as e:
-#        client.publish(response_topic, f'Exception during "mpdtube": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def cmd_ticker(client, response_topic, value):
     try:
@@ -527,16 +614,14 @@ def cmd_ticker(client, response_topic, value):
         txt = txt.encode('utf-8', 'ignore')
 
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
         s.sendto(txt, (UDP_IP, UDP_PORT))
-
         s.close()
 
         if call_hass('states/switch.epc4_2')['state'] == 'off':
             client.publish(response_topic, 'Ticker in zaal 1 is off')
 
         else:
-            client.publish(response_topic, 'Your text has been sent to the ticker-proxy.')
+            client.publish(response_topic, 'Your text has been sent to the ticker.')
 
     except Exception as e:
         client.publish(response_topic, f'Exception during "ticker": {e}, line number: {e.__traceback__.tb_lineno}')
@@ -577,29 +662,35 @@ def on_message(client, userdata, message):
         if channel in channels or (len(channel) >= 1 and channel[0] == '\\'):
             response_topic = f'{topic_prefix}to/irc/{channel}/privmsg'
 
-            if command == 'sth':
-                cmd_sth(client, response_topic)
+            # if command == 'sthold':
+            #     cmd_sth(client, response_topic)
 
-            elif command == 'octoprint':
+            # elif command == 'sth':
+            #     cmd_sth_new(client, response_topic)
+
+            if command == 'octoprint':
                 cmd_octoprint(client, response_topic)
 
-            elif command == 'ot':
-                cmd_ot(client, response_topic)
+            # elif command == 'ot':
+            #     cmd_ot(client, response_topic)
 
-            elif command == 'ot-set':
-                cmd_ot_set(client, response_topic, value)
+            # elif command == 'ot-set':
+            #     cmd_ot_set(client, response_topic, value)
 
             elif command == 'sensor':
-                cmd_sensor(client, response_topic, value_all)
+                try:
+                   cmd_sensor(client, response_topic, value_all)
+                except Exception as e:
+                   client.publish(response_topic, f"Error: {e}")
 
-            elif command == 'calendar':
-                cmd_calendar(client, response_topic, value)
+            # elif command == 'calendar':
+            #     cmd_calendar(client, response_topic, value)
 
-            elif command == 'sun':
-                cmd_sun(client, response_topic)
+            # elif command == 'sun':
+            #     cmd_sun(client, response_topic)
 
-            elif command == 'power':
-                cmd_power(client, response_topic)
+            # elif command == 'power':
+            #     cmd_power(client, response_topic)
 
             elif command == 'toggle':
                 cmd_toggle(client, response_topic, value)
@@ -610,8 +701,11 @@ def on_message(client, userdata, message):
             elif command == 'toggle-list-on':
                 cmd_toggle_list_on(client, response_topic, value)
 
-            elif command == 'who':
-                cmd_who(client, response_topic)
+            elif command == 'show-on':
+                cmd_show_on(client, response_topic)
+
+            # elif command == 'who':
+            #     cmd_who(client, response_topic)
 
 #            elif command == 'mpdtube':
 #                cmd_mpdtube(client, response_topic, nick, channel, ' '.join(value_all))
@@ -620,6 +714,8 @@ def on_message(client, userdata, message):
                 cmd_ticker(client, response_topic, ' '.join(value_all))
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         client.publish(response_topic, f'Exception during "on_message": {e}, line number: {e.__traceback__.tb_lineno}')
 
 def on_connect(client, userdata, flags, rc):
@@ -637,7 +733,7 @@ def announce_thread(client):
         except Exception as e:
             print(f'Failed to announce: {e}')
 
-client = mqtt.Client(f'{socket.gethostname()}_{sys.argv[0]}', clean_session=False)
+client = mqtt.Client()
 client.on_message = on_message
 client.on_connect = on_connect
 client.connect(mqtt_server, port=1883, keepalive=4, bind_address='')

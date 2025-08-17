@@ -132,7 +132,7 @@ def on_message(client, userdata, message):
 def on_connect(client, userdata, flags, rc):
     client.subscribe(f'space/statedigit')
 
-client = mqtt.Client(f'{socket.gethostname()}_{sys.argv[0]}', clean_session=False)
+client = mqtt.Client()
 client.on_message = on_message
 client.on_connect = on_connect
 client.connect(mqtt_server, port=1883, keepalive=4, bind_address='')
