@@ -3,6 +3,7 @@ bs4
 cloudscraper
 homeassistant_api
 httpx
+ldap3
 paho-mqtt
 scipy
 timeago

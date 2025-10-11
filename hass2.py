@@ -1,6 +1,8 @@
 #! /usr/bin/env python3
+from __future__ import annotations
 
 import time
+import ldap3
 import logging
 import threading
 import paho.mqtt.client as mqtt 
@@ -11,8 +13,12 @@ import re
 import arrow
 import math
 import cloudscraper
+import requests
+import json
 from bs4 import BeautifulSoup
-
+from functools import lru_cache
+from typing import Dict, List, Tuple, Any, Iterable
+import math
 # pip3 install httpx cloudscraper bs4
 
 """
@@ -123,7 +129,10 @@ class hassPlugin(Plugin):
            PluginCommand(self.cmd_spacehex, "spacehex", "Display the current space color"),
            PluginCommand(self.spacergb, "spacergb", "Set the space color"),
            PluginCommand(self.cmd_regen, "regen", "Display the current rain forecast"),
-           PluginCommand(self.cmd_spacestation, "spacestation", "Display the current weatherstation on top of the space")
+           PluginCommand(self.cmd_rack, "rack", "Display the rack temp and power usage."),
+           PluginCommand(self.cmd_spacestation, "spacestation", "Display the current weatherstation on top of the space"),
+           PluginCommand(self.cmd_zaal2wled, "zaal2wled", "Change the colour in zaal 1 to what the rgb sensor sees."),
+           PluginCommand(self.cmd_zaalrgb, "zaalrgb", "Change the colour of zaal 1 to r,g,b")
         ]
     
     def request(self, url, asJson=False):
@@ -177,6 +186,52 @@ class hassPlugin(Plugin):
                 sensors.append(state)
         return sensors
     
+    def cmd_rack(self, text, topic, response_topic):
+        # racktemp_front_temp, racktemp_back_temp
+        outString = "\x0309[Rack]\x0f "
+        outString += "Front:"
+        try:
+            front_temp = round(float(self.call_hass("states/sensor.racktemp_front_temp")['state']), 2)
+            outString += f"{self.colorizeTemp(front_temp)} {front_temp}°C\x0f | "
+        except Exception as e:
+            outString += f"\x0304Error ({e})\x0f | "
+            self.log.error(f"Error getting rack front temp: {e}")
+
+        outString += "Back:"
+        try:
+            back_temp = round(float(self.call_hass("states/sensor.racktemp_back_temp")['state']), 2)
+            outString += f"{self.colorizeTemp(back_temp)} {back_temp}°C\x0f | "
+        except Exception as e:
+            outString += f"\x0304Error ({e})\x0f | "
+            self.log.error(f"Error getting rack back temp: {e}")
+        
+        # racktemp_front_hum, racktemp_back_hum
+        outString += "Front Hum:"
+        try:
+            front_hum = round(float(self.call_hass("states/sensor.racktemp_front_hum")['state']), 2)
+            outString += f"{self.colorizeHum(front_hum)} {front_hum}%\x0f | "
+        except Exception as e:
+            outString += f"\x0304Error ({e})\x0f | "
+            self.log.error(f"Error getting rack front hum: {e}")
+    
+        outString += "Back Hum:"
+        try:
+            back_hum = round(float(self.call_hass("states/sensor.racktemp_back_hum")['state']), 2)
+            outString += f"{self.colorizeHum(back_hum)} {back_hum}%\x0f | "
+        except Exception as e:
+            outString += f"\x0304Error ({e})\x0f | "
+            self.log.error(f"Error getting rack back hum: {e}")
+        
+        outString += "Power:"
+        try:
+            rack_power = round(float(self.call_hass("states/sensor.hall_rack_power")['state']), 2)
+            outString += f"{self.colorizeNumber(rack_power, 0.0, 400.0, 1000.0)}W\x0f"
+        except Exception as e:
+            outString += f"\x0304Error ({e})\x0f"
+            self.log.error(f"Error getting rack power: {e}")
+
+        self.reply(response_topic, outString)
+        
     def cmd_spacestation(self, text, topic, response_topic):
         temp_sensors = ["weatherstation_bme280_temperature", 
                         "weatherstation_ht10_temperature", 
@@ -228,8 +283,22 @@ class hassPlugin(Plugin):
         self.reply(response_topic, outString[:-2])
       
     def cmd_who(self, text, topic, response_topic): 
+       # get valid users because device_tracker also includes non-users (e.g. devices/hardware)
+       login_dn = 'uid=device_presence,cn=users,cn=accounts,dc=nurd,dc=space'
+       login_pw = 'pore5deduce+tool3North'
+       server = ldap3.Server('ldaps://ipa.nurd.space')
+       conn = ldap3.Connection(server, user=login_dn, password=login_pw)
+       conn.bind()
+       base_dn = 'cn=users,cn=accounts,dc=nurd,dc=space'
+       filter = '(|(memberOf=cn=members,cn=groups,cn=accounts,dc=nurd,dc=space)(memberOf=cn=friends,cn=groups,cn=accounts,dc=nurd,dc=space))'
+       attribs = ['uid']
+       conn.search(base_dn, filter, attributes = attribs)
+       valid_users = [entry.uid[0] for entry in conn.entries]
+       conn.unbind()
+
        #TODO colorize people! 
-       people = [p for p in self.hass_find_entities('person') if p['state'] == 'home']
+       people = [p for p in self.hass_find_entities('device_tracker') if p['state'] == 'home' and p['attributes']['friendly_name'] in valid_users]
+       print(people)
        people_friendly = list(map(lambda d: d['attributes']['friendly_name'], people))  
        space_state = self.call_hass('states/binary_sensor.space_state')['state']
 
@@ -341,7 +410,7 @@ class hassPlugin(Plugin):
                 
             zaal3_dak_temp = self.hass_find_sensors("sensor.daksensor_temperatuur_in_het_dak", hass_states)[0]['state']
             if zaal3_dak_temp != 'unavailable':
-                outString += f"\x0309Zaal 3 Dak\x0f:{self.colorizeTemp(float(zaal3_dak_temp))} {zaal3_dak_temp}°C\x0f"
+                outString += f"\x0309Zaal 3 Dak\x0f:{self.colorizeTemp(float(zaal3_dak_temp))} {round(float(zaal3_dak_temp), 3)}°C\x0f"
 
             self.reply(response_topic, outString)
 
@@ -364,6 +433,166 @@ class hassPlugin(Plugin):
             self.log.error(f"Error getting title: {e}")
             return f"Error getting title: {e}"
 
+    def _srgb_to_linear(self, c: float) -> float:
+        # sRGB companding inverse
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    def _hex_to_rgb01(self, hex_str: str) -> Tuple[float, float, float]:
+        """
+        Parse hex like '#RRGGBB', 'RRGGBB', '#RGB', '0xRRGGBB' and return floats in [0,1].
+        """
+        s = hex_str.strip().lower()
+        if s.startswith("0x"):
+            s = s[2:]
+        if s.startswith("#"):
+            s = s[1:]
+        if len(s) == 3:  # #rgb -> #rrggbb
+            s = "".join(ch * 2 for ch in s)
+        if len(s) != 6 or any(ch not in "0123456789abcdef" for ch in s):
+            raise ValueError(f"Invalid hex colour: {hex_str!r}")
+        r = int(s[0:2], 16) / 255.0
+        g = int(s[2:4], 16) / 255.0
+        b = int(s[4:6], 16) / 255.0
+        return r, g, b
+
+
+    def _srgb01_to_oklab(self, r: float, g: float, b: float) -> Tuple[float, float, float]:
+        """
+        Convert sRGB (0..1) to OKLab (L, a, b).
+        Uses Björn Ottosson's reference transforms (no external deps).
+        """
+        # Linearize
+        rl, gl, bl = self._srgb_to_linear(r), self._srgb_to_linear(g), self._srgb_to_linear(b)
+
+        # RGB -> LMS (via linear sRGB to LMS matrix)
+        l = 0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl
+        m = 0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl
+        s = 0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl
+
+        # Nonlinearity
+        l_ = l ** (1.0 / 3.0)
+        m_ = m ** (1.0 / 3.0)
+        s_ = s ** (1.0 / 3.0)
+
+        # LMS -> OKLab
+        L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+        a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+        b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+        return (L, a, b)
+
+    def _hex_to_oklab(self, hex_str: str) -> Tuple[float, float, float]:
+        r, g, b = self._hex_to_rgb01(hex_str)
+        return self._srgb01_to_oklab(r, g, b)
+
+
+    def _oklab_distance(self, o1: Tuple[float, float, float], o2: Tuple[float, float, float]) -> float:
+        # Euclidean distance in OKLab (good perceptual proxy)
+        dL = o1[0] - o2[0]
+        da = o1[1] - o2[1]
+        db = o1[2] - o2[2]
+        return math.sqrt(dL * dL + da * da + db * db)
+
+    def _file_mtime(self, path: str) -> float:
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return -1.0
+
+
+    @lru_cache(maxsize=8)
+    def _load_color_db(self, path: str, mtime: float) -> List[Dict[str, Any]]:
+        """
+        Load and preprocess color DB from JSON path.
+        Result: list of dicts: {"name": str, "hex": "#rrggbb", "oklab": (L,a,b)}
+        LRU cache key includes mtime so edits to the file bust cache.
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+
+        db: List[Dict[str, Any]] = []
+        for item in raw:
+            name = item.get("name")
+            hx = item.get("hex")
+            if not isinstance(name, str) or not isinstance(hx, str):
+                continue
+            # normalize hex to #rrggbb
+            r, g, b = self._hex_to_rgb01(hx)
+            hex_norm = "#{:02x}{:02x}{:02x}".format(int(round(r * 255)),
+                                                    int(round(g * 255)),
+                                                    int(round(b * 255)))
+            db.append({"name": name, "hex": hex_norm, "oklab": self._srgb01_to_oklab(r, g, b)})
+        if not db:
+            raise ValueError(f"No valid color entries found in {path!r}.")
+        return db
+
+    def _get_db(self, path: str) -> List[Dict[str, Any]]:
+        return self._load_color_db(path, self._file_mtime(path))
+
+    def closest_colour_name(self,
+        hex_color: str,
+        json_path: str = "colornames.json",
+        *,
+        k: int = 1,
+        include_distance: bool = False,
+    ) -> Any:
+        """
+        Given a hex color, return the closest colour name(s) from a JSON database.
+
+        Parameters
+        ----------
+        hex_color : str
+            Input color, e.g. '#c93f38', 'c93f38', '#f00', '0xff0000'.
+        json_path : str
+            Path to colornames JSON with objects like {"name": "...", "hex": "#rrggbb"}.
+        k : int
+            Number of closest matches to return. k=1 returns a single value by default.
+        include_distance : bool
+            If True, return dict(s) with name, hex, distance (OKLab Δ).
+
+        Returns
+        -------
+        If k == 1 and include_distance == False:
+            str  -> the single closest color name.
+        Else:
+            List[dict] -> [{"name": str, "hex": "#rrggbb", "distance": float}, ...] sorted by closeness.
+
+        Notes
+        -----
+        - Exact hex matches (case-insensitive, including #rgb form) are returned immediately.
+        - Distances use Euclidean Δ in OKLab for better perceptual matching than RGB/HSV.
+        """
+        db = self._get_db(json_path)
+
+        # Normalize input and check exact match first
+        try:
+            r, g, b = self._hex_to_rgb01(hex_color)
+        except ValueError as e:
+            raise
+
+        input_hex_norm = "#{:02x}{:02x}{:02x}".format(int(round(r * 255)),
+                                                    int(round(g * 255)),
+                                                    int(round(b * 255)))
+        for entry in db:
+            if entry["hex"].lower() == input_hex_norm:
+                if k == 1 and not include_distance:
+                    return entry["name"]
+                out = {"name": entry["name"], "hex": entry["hex"], "distance": 0.0}
+                return [out] if k != 1 or include_distance else entry["name"]
+
+        # Fuzzy match via OKLab
+        target_oklab = self._srgb01_to_oklab(r, g, b)
+        scored: List[Tuple[float, Dict[str, Any]]] = []
+        for entry in db:
+            d = self._oklab_distance(target_oklab, entry["oklab"])
+            scored.append((d, entry))
+
+        scored.sort(key=lambda t: t[0])
+        top = scored[: max(1, k)]
+        if k == 1 and not include_distance:
+            return top[0][1]["name"]
+        return [{"name": e["name"], "hex": e["hex"], "distance": float(d)} for d, e in top]
+
+
     def cmd_spacehex(self, text, topic, response_topic):
         states = self.call_hass("states")
         rgb = [self.hass_find_sensors("sensor.tcs34725_red_channel", states)[0],
@@ -374,14 +603,9 @@ class hassPlugin(Plugin):
             return self.reply(response_topic, f"\x0309[SpaceHex]\x0f \x0304Unavailable\x0f")
 
         hexcolor = "{:02x}{:02x}{:02x}".format(*[int(round((float(x['state']) / 100) * 255)) for x in rgb])
-        title = self.extract_title_from_url(f"https://icolorpalette.com/color/{hexcolor}")
-        if not title.startswith("Error") and "information" in title.lower():
-            # strip first character 
-            title = title[1:]
-            title = title.split("  ")[0]
-
-
-        return self.reply(response_topic, f"\x0309[SpaceHex]\x0f Zaal 1 is currently: \x0303#{hexcolor}\x0f - {title} (https://icolorpalette.com/color/{hexcolor})")
+        
+        name = self.closest_colour_name(f"#{hexcolor}", "colornames.json")
+        return self.reply(response_topic, f"\x0309[SpaceHex]\x0f Zaal 1 is currently: \x0303#{hexcolor}\x0f - ({name})")
         
     def cmd_power(self, text, topic, response_topic):
         if "-v" in text:
@@ -538,6 +762,187 @@ class hassPlugin(Plugin):
         sparkline = ''.join(bar[min([barcount - 1, int((n - mn) / extent * barcount)])] for n in numbers)
 
         return mn, mx, sparkline
+
+    # def _normalize_rgb16_to_8(self, r, g, b):
+    #     """
+    #     TCS34725 channels are typically 0..65535 (16-bit-ish). 
+    #     We scale them so the brightest channel maps to 255 (preserving ratios).
+    #     If all zero, return black.
+    #     """
+    #     r = int(r) if r is not None else 0
+    #     g = int(g) if g is not None else 0
+    #     b = int(b) if b is not None else 0
+    #     m = max(r, g, b)
+    #     if m <= 0:
+    #         return (0, 0, 0)
+    #     # scale so max -> 255
+    #     k = 255.0 / m
+    #     return (int(r * k), int(g * k), int(b * k))
+
+    # def _gamma_correct(self, r, g, b, gamma=2.2):
+    #     """
+    #     Simple gamma correction for nicer perceived color on LEDs.
+    #     """
+    #     def corr(x):
+    #         xn = max(0, min(255, x)) / 255.0
+    #         return int(round((xn ** (1.0 / gamma)) * 255))
+    #     return (corr(r), corr(g), corr(b))
+
+    # def _send_wled_color(self, wled_host, r, g, b, brightness=None, segment_id=None, timeout=2.5):
+    #     """
+    #     Send a solid color to WLED using its JSON API.
+    #     wled_host: "192.168.1.123" or "wled.local"
+    #     brightness: 1..255, optional. If None, keep current.
+    #     segment_id: int or None. If None, applies to current/first segment.
+    #     """
+    #     url = f"http://{wled_host}/json/state"
+    #     payload = {
+    #         "on": True,
+    #     }
+
+    #     # Segment object: set color for target segment (or default)
+    #     seg_obj = {"col": [[int(r), int(g), int(b)]]}
+    #     if segment_id is not None:
+    #         seg_obj["id"] = int(segment_id)
+
+    #     payload["seg"] = [seg_obj]
+    #     if brightness is not None:
+    #         payload["bri"] = int(max(1, min(255, brightness)))
+
+    #     resp = requests.post(url, json=payload, timeout=timeout)
+    #     resp.raise_for_status()
+    #     return resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"ok": True}
+
+    def hex_to_rgb(self, hex_str):
+        """Convert hex color string to RGB tuple."""
+        hex_str = hex_str.lstrip('#')
+        if len(hex_str) == 3:
+            hex_str = ''.join([c*2 for c in hex_str])
+        if len(hex_str) != 6:
+            raise ValueError("Invalid hex color format")
+        r = int(hex_str[0:2], 16)
+        g = int(hex_str[2:4], 16)
+        b = int(hex_str[4:6], 16)
+        return (r, g, b)
+
+    def cmd_zaalrgb(self, text, topic, response_topic):
+        wled_host = "10.208.2.23"  # default target
+        brightness = None           # optional override
+        gamma_val = 2.2             # tweak if needed
+        segment_id = None
+
+        parts = text.strip().split(" ")
+        if len(parts) < 2:
+            self.reply(response_topic, "Usage: !zaalrgb R,G,B (e.g. !zaalrgb 255,128,64)")
+            return
+        print(parts)
+        
+        rgb_str = " ".join(parts[1:]).strip()
+        if rgb_str.startswith("#") or rgb_str.startswith("0x"):
+            try:
+                r, g, b = self.hex_to_rgb(rgb_str)
+            except ValueError as e:
+                self.log.error(f"Invalid hex color '{rgb_str}': {e}")
+                return
+        else:
+            # Expecting "R,G,B"
+            try:
+                # EXTRACT 3 numbers, no matter the spacing or commas
+                pattern = re.compile(r'\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*')
+                m = pattern.fullmatch(rgb_str)
+                if not m:
+                    raise ValueError("Invalid RGB format")
+                r, g, b = map(int, m.groups())
+            except Exception as e:
+                self.log.error(f"Invalid RGB format '{rgb_str}', expected R,G,B — {e}")
+                return
+
+        # Clamp values
+        r, g, b = [max(0, min(255, x)) for x in (r, g, b)]
+
+        # Send to WLED
+        url = f"http://{wled_host}/json/state"
+        payload = {
+            "on": True,
+            "seg": [{
+                "col": [[r, g, b]]
+            }]
+        }
+        if brightness is not None:
+            payload["bri"] = int(max(1, min(255, brightness)))
+        if segment_id is not None:
+            payload["seg"][0]["id"] = int(segment_id)
+
+        try:
+            resp = requests.post(url, json=payload, timeout=2.5)
+            resp.raise_for_status()
+            self.reply(response_topic, f"Set WLED @ {wled_host} to RGB({r},{g},{b})")
+        except Exception as e:
+            self.reply(response_topic, f"Failed to send RGB to WLED @ {wled_host}: {e}")
+
+    def cmd_zaal2wled(self, text, topic, response_topic):
+            """
+            Reads TCS34725 RGB channels from Home Assistant and sends color to WLED.
+            'text' may optionally contain params like:
+            "wled=192.168.1.50 bri=128 gamma=2.2 seg=0"
+            """
+            # --- defaults you can tweak ---
+            wled_host = "10.208.2.23"     # set your default target
+            brightness = None            # or e.g. 180
+            gamma_val = 2.2
+            segment_id = None
+
+            # Parse simple key=value pairs from 'text' (kept deliberately light)
+            if text:
+                for part in text.split():
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        k = k.strip().lower()
+                        v = v.strip()
+                        if k == "wled":
+                            wled_host = v
+                        elif k in ("bri", "brightness"):
+                            try: brightness = int(v)
+                            except: pass
+                        elif k == "gamma":
+                            try: gamma_val = float(v)
+                            except: pass
+                        elif k in ("seg", "segment"):
+                            try: segment_id = int(v)
+                            except: pass
+
+            states = self.call_hass("states")
+            rgb_raw = [
+                self.hass_find_sensors("sensor.tcs34725_red_channel", states)[0],
+                self.hass_find_sensors("sensor.tcs34725_green_channel", states)[0],
+                self.hass_find_sensors("sensor.tcs34725_blue_channel", states)[0]
+            ]
+
+            # Safeguard: resolve entity state value -> int
+            def to_int(v):
+                try:
+                    # HA state often as string
+                    return int(float(v.get("state") if isinstance(v, dict) else v))
+                except Exception:
+                    return 0
+
+            r16, g16, b16 = map(to_int, rgb_raw)
+
+            # Normalize and gamma-correct
+            r8, g8, b8 = self._normalize_rgb16_to_8(r16, g16, b16)
+            r8, g8, b8 = self._gamma_correct(r8, g8, b8, gamma=gamma_val)
+
+            try:
+                result = self._send_wled_color(
+                    wled_host=wled_host,
+                    r=r8, g=g8, b=b8,
+                    brightness=brightness,
+                    segment_id=segment_id
+                )
+                self.reply(response_topic, f"WLED @ {wled_host} set to RGB({r8},{g8},{b8}) bri={brightness} seg={segment_id} result={result}")
+            except Exception as e:
+                self.log.error(f"Failed to send color to WLED @ {wled_host}: {e}")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
