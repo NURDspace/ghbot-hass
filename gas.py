@@ -102,6 +102,8 @@ def on_message(client, userdata, message):
                     if open_gas_start != None:
                         gas_diff = current_gas - open_gas_start
                         output += f'Space is now closed after {time_diff_str}. We used {gas_diff:.4f} m3 gas while open ({gas_diff * 3600/ time_diff:.4f} m3/hour)'
+                if output == '':
+                    output += f'Space is now closed after {time_diff_str}. It looks like we used no gas'
             elif current_gas != None:
                 gas_diff = current_gas - closed_gas_start
                 open_gas_start = current_gas
