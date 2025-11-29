@@ -6,6 +6,7 @@ from hasscfg import *
 import json
 import paho.mqtt.client as mqtt
 import random
+import requests
 import time
 import urllib.parse
 import urllib.request
@@ -66,6 +67,15 @@ def send_bot(txt):
         response_topic = f'{topic_prefix}to/irc/{channel}/privmsg'
         client.publish(response_topic, txt)
 
+# (electricity, gas)
+def get_prices():
+#    headers = { 'User-Agent': 'nurdbot' }
+#    r = requests.get('http://stofradar.nl:9001/electricity/price', timeout=2, headers=headers)
+#    j = json.loads(r.content.decode('ascii'))
+
+    # per 1 april 2025
+    return (0.16 + 0.14762, 1.41882)
+
 def on_message(client, userdata, message):
     global open_gas_start
     global closed_gas_start
@@ -96,23 +106,26 @@ def on_message(client, userdata, message):
             else:
                 time_diff_str = f'{time_diff / 86400:.2f} days'
 
+            prices = get_prices()
+            gass_diff = None
             if space_state == False:
                 if current_gas != None:
                     closed_gas_start = current_gas
                     if open_gas_start != None:
-                        gas_diff = current_gas - open_gas_start
-                        output += f'Space is now closed after {time_diff_str}. We used {gas_diff:.4f} m3 gas while open ({gas_diff * 3600/ time_diff:.4f} m3/hour)'
-                if output == '':
-                    output += f'Space is now closed after {time_diff_str}. It looks like we used no gas'
+                        gass_diff = current_gas - open_gas_start
+                        output += f'Space is now closed after {time_diff_str}. We used {gass_diff:.4f} m3 gas while open ({gass_diff * 3600/ time_diff:.4f} m3/hour)'
             elif current_gas != None:
-                gas_diff = current_gas - closed_gas_start
+                gass_diff = current_gas - closed_gas_start
                 open_gas_start = current_gas
-                output += f'Space is now open, was closed for {time_diff_str}. We used {gas_diff:.4f} m3 gas while closed ({gas_diff * 3600/ time_diff:.4f} m3/hour)'
+                output += f'Space is now open, was closed for {time_diff_str}. We used {gass_diff:.4f} m3 gas while closed ({gass_diff * 3600/ time_diff:.4f} m3/hour)'
+            if output == '':
+                output += f'Space is now closed after {time_diff_str}. It looks like we used no gas'
 
             current_electries = electries()
 
             output += ' '
 
+            stroom_diff = None
             if space_state == False:
                 if current_electries != None:
                     closed_electries_start = current_electries
@@ -125,6 +138,11 @@ def on_message(client, userdata, message):
                 output += f'and {current_electries - closed_electries_start:.4f} kWh electricity ({stroom_diff * 3600  / time_diff:.4f} kWh/hour).'
             else:
                 output += '.'
+
+            if not stroom_diff is None and not prices[0] is None:
+                output += f' Electricity cost us: {stroom_diff * prices[0]:.2f} euro.'
+            if not gass_diff is None and not prices[1] is None:
+                output += f' Gas cost us: {gass_diff * prices[1]:.2f} euro.'
 
             send_bot(output)
 
